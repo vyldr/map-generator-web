@@ -1,3 +1,5 @@
+import type Tile from './tile';
+
 class MapDisplay {
     constructor(private canvasElement: HTMLCanvasElement) {
         this.ctx = canvasElement.getContext('2d')!;
@@ -24,21 +26,15 @@ class MapDisplay {
     };
 
     // Display the map to the canvas
-    public render(
-        wallArray: number[][],
-        crystalArray: number[][],
-        oreArray: number[][],
-        heightArray: number[][],
-        viewMode: number
-    ) {
+    public render(tiles: Tile[][], heightArray: number[][], viewMode: number) {
         // Clear the canvas
         this.ctx.clearRect(0, 0, this.ctx.canvas.width, this.ctx.canvas.height);
 
         // Create the image
         this.ctx.canvas.width = this.ctx.canvas.clientWidth * window.devicePixelRatio;
         this.ctx.canvas.height = this.ctx.canvas.clientHeight * window.devicePixelRatio;
-        const scale: number = Math.floor(this.ctx.canvas.width / wallArray.length);
-        const offset: number = Math.floor((this.ctx.canvas.width % wallArray.length) / 2);
+        const scale: number = Math.floor(this.ctx.canvas.width / tiles.length);
+        const offset: number = Math.floor((this.ctx.canvas.width % tiles.length) / 2);
         const separator: number = Math.max(Math.floor(scale / 16), 1);
         const diagSep = (Math.SQRT2 * separator) / 2 - 0.15;
 
@@ -53,11 +49,11 @@ class MapDisplay {
 
         // Draw the tiles
         if (viewMode == 1) {
-            for (let i = 0; i < wallArray.length; i++) {
-                for (let j = 0; j < wallArray[0].length; j++) {
+            for (let i = 0; i < tiles.length; i++) {
+                for (let j = 0; j < tiles[0].length; j++) {
                     // Draw the tile
                     this.ctx.fillStyle = '#ff0000'; // Debug
-                    this.ctx.fillStyle = this.colors[wallArray[i][j]];
+                    this.ctx.fillStyle = this.colors[tiles[i][j].type];
                     this.ctx.fillRect(
                         j * scale + offset + Math.floor(separator / 2),
                         i * scale + offset + Math.floor(separator / 2),
@@ -66,7 +62,7 @@ class MapDisplay {
                     );
 
                     // Draw the crystal and ore indicators
-                    if (crystalArray[i][j] > 0) {
+                    if (tiles[i][j].crystals > 0) {
                         this.ctx.fillStyle = this.colors[10];
                         this.ctx.fillRect(
                             j * scale + offset + 1 * separator,
@@ -76,7 +72,7 @@ class MapDisplay {
                         );
                     }
 
-                    if (oreArray[i][j] > 0) {
+                    if (tiles[i][j].ore > 0) {
                         this.ctx.fillStyle = this.colors[11];
                         this.ctx.fillRect(
                             j * scale + offset + 2 * separator,
@@ -97,8 +93,8 @@ class MapDisplay {
             }
 
             // Draw the heightmap triangles
-            for (let i = 0; i < wallArray.length; i++) {
-                for (let j = 0; j < wallArray[0].length; j++) {
+            for (let i = 0; i < tiles.length; i++) {
+                for (let j = 0; j < tiles[0].length; j++) {
                     this.ctx.fillStyle = '#ff0000'; // Debug
 
                     const startx = j * scale + offset + Math.floor(separator / 2);

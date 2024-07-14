@@ -28,13 +28,7 @@ function render(): void {
     size.value = mapgen.size;
     solidDensity.value = mapgen.solidDensity;
     mapgen.mapgen();
-    mapdisplay.render(
-        mapgen.wall_array,
-        mapgen.crystal_array,
-        mapgen.ore_array,
-        mapgen.height_array,
-        parseInt(viewMode)
-    );
+    mapdisplay.render(mapgen.tiles, mapgen.height_array, parseInt(viewMode));
 }
 
 function shuffle(e: Event): void {

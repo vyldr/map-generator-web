@@ -1,4 +1,5 @@
 import seedrandom, { type PRNG } from 'seedrandom';
+import Tile from './tile';
 
 class Mapgen {
     constructor() {
@@ -6,9 +7,7 @@ class Mapgen {
         this.random = seedrandom(this.seed);
         this.shuffle_parameters();
 
-        this.wall_array = [];
-        this.crystal_array = [];
-        this.ore_array = [];
+        this.tiles = [];
         this.height_array = [];
         this.flow_list = [];
         this.landslide_list = [];
@@ -23,9 +22,7 @@ class Mapgen {
     private landslide_list: number[][][];
     private base: number[];
 
-    public wall_array: number[][];
-    public crystal_array: number[][];
-    public ore_array: number[][];
+    public tiles: Tile[][];
     public height_array: number[][];
 
     public seed: string | number;
@@ -94,7 +91,7 @@ class Mapgen {
 
         // Height
         this.heightAlgo = 0;
-        this.heightRange = this.randint_range(1, 26);
+        this.heightRange = this.randint_range(1, 20);
         this.heightSquareWidth = 8;
 
         // Oxygen
@@ -116,11 +113,22 @@ class Mapgen {
         for (let i = 0; i < x; i++) {
             array.push([]);
             for (let j = 0; j < y; j++) {
-                array[i].push(typeof fill == 'function' ? fill() : fill);
+                array[i].push(typeof fill == 'function' ? fill(i, j) : fill);
             }
         }
 
         return array;
+    }
+
+    // Debug function
+    private logTiles(key: keyof Tile): void {
+        for (let i = 0; i < this.tiles.length; i++) {
+            let row = '';
+            for (let j = 0; j < this.tiles[0].length; j++) {
+                row += this.tiles[i][j][key] + ' ';
+            }
+            console.log(row);
+        }
     }
 
     // Perform per-tile functions from the map center to the edge to make the map center generate the same at different map sizes
@@ -189,62 +197,64 @@ class Mapgen {
         // Round up to the next chunk
         this.size = Math.floor((this.size + 7) / 8) * 8;
 
+        // Initialize the Tile array
+        this.tiles = this.createArray(this.size, this.size, (y: number, x: number) => {
+            return new Tile(y, x);
+        });
+
         // Optionally set oxygen
         if (this.oxygen == -1) {
             this.oxygen = this.size * this.size * 3;
         }
 
-        // Create the solid rock
-        this.random = seedrandom(seeds.solid_seed);
-        const solid_array = this.createArray(this.size, this.size, -1); // Solid rock
-        this.spiral((x: number, y: number) => {
-            solid_array[y][x] = this.randomize(1 - this.solidDensity, -1);
-        });
-        this.speleogenesis(solid_array);
-        this.cleanup(solid_array);
-        this.fillExtra(solid_array);
-
-        // Create the other rocks
-        this.wall_array = this.createArray(this.size, this.size, -1); // Other rock
+        // Create the dirt, loose rock, and solid rock
         this.random = seedrandom(seeds.other_seed);
         this.spiral((x: number, y: number) => {
-            this.wall_array[y][x] = this.randomize(1 - this.wallDensity, -1);
+            this.tiles[y][x].wall = this.randomize(1 - this.wallDensity, -1);
         });
-        this.speleogenesis(this.wall_array);
-        this.cleanup(this.wall_array);
+        this.speleogenesis('wall');
+        this.cleanup('wall');
         this.random = seedrandom(seeds.other_seed); // Use fresh RNG
-        this.details(this.wall_array, 3);
+        this.details('wall', 3);
+        // Apply to the tiles
+        this.spiral((x: number, y: number) => {
+            this.tiles[y][x].type = this.tiles[y][x].wall;
+        });
 
-        // Merge the permanent and temporary features
-        for (let i = 0; i < this.size; i++) {
-            for (let j = 0; j < this.size; j++) {
-                if (solid_array[i][j] == -1) {
-                    this.wall_array[i][j] = 4;
-                }
+        // Create the solid rock
+        this.random = seedrandom(seeds.solid_seed);
+        this.spiral((x: number, y: number) => {
+            this.tiles[y][x].solid = this.randomize(1 - this.solidDensity, -1);
+        });
+        this.speleogenesis('solid');
+        this.cleanup('solid');
+        this.fillExtra();
+        // Apply to the tiles
+        this.spiral((x: number, y: number) => {
+            if (this.tiles[y][x].solid == -1) {
+                this.tiles[y][x].type = 4;
             }
-        }
+        }, 0);
 
         // Create ore
         this.random = seedrandom(seeds.ore_seed);
-        this.ore_array = this.createArray(this.size, this.size, -1);
         this.spiral((x: number, y: number) => {
-            this.ore_array[y][x] = this.randomize(1 - this.oreDensity, -1);
+            this.tiles[y][x].ore = this.randomize(1 - this.oreDensity, -1);
         });
-        this.speleogenesis(this.ore_array);
-        this.cleanup(this.ore_array);
+        this.speleogenesis('ore');
+        this.cleanup('ore');
         this.random = seedrandom(seeds.ore_seed); // Use fresh RNG
-        this.details(this.ore_array, 4);
+        this.details('ore', 4);
 
         // Create crystals
         this.random = seedrandom(seeds.crystal_seed);
-        this.crystal_array = this.createArray(this.size, this.size, -1);
         this.spiral((x: number, y: number) => {
-            this.crystal_array[y][x] = this.randomize(1 - this.crystalDensity, -1);
+            this.tiles[y][x].crystals = this.randomize(1 - this.crystalDensity, -1);
         });
-        this.speleogenesis(this.crystal_array);
-        this.cleanup(this.crystal_array);
+        this.speleogenesis('crystals');
+        this.cleanup('crystals');
         this.random = seedrandom(seeds.crystal_seed); // Use fresh RNG
-        this.details(this.crystal_array, 5);
+        this.details('crystals', 5);
 
         // Create a height map
         this.random = seedrandom(seeds.height_seed);
@@ -256,33 +266,33 @@ class Mapgen {
         }
 
         // Flood the low areas
-        this.flood(this.wall_array, this.height_array, this.floodLevel, this.floodType);
+        this.flood(this.height_array, this.floodLevel, this.floodType);
 
         // Remove resources from invalid tiles
         for (let i = 0; i < this.size; i++) {
             for (let j = 0; j < this.size; j++) {
-                if (this.wall_array[i][j] < 1 || this.wall_array[i][j] > 3) {
-                    this.crystal_array[i][j] = 0;
-                    this.ore_array[i][j] = 0;
+                if (this.tiles[i][j].type < 1 || this.tiles[i][j].type > 3) {
+                    this.tiles[i][j].crystals = 0;
+                    this.tiles[i][j].ore = 0;
                 }
             }
         }
 
         // Slimy Slug holes
         this.random = seedrandom(seeds.slug_seed);
-        this.aSlimySlugIsInvadingYourBase(this.wall_array, this.slugDensity);
+        this.aSlimySlugIsInvadingYourBase(this.slugDensity);
 
         // Energy Crystal Seams
         this.random = seedrandom(seeds.ecs_seed);
-        this.addSeams(this.wall_array, this.crystal_array, this.crystalSeamDensity, 10);
+        this.addSeams('crystals', this.crystalSeamDensity, 10);
 
         // Ore Seams
         this.random = seedrandom(seeds.os_seed);
-        this.addSeams(this.wall_array, this.ore_array, this.oreSeamDensity, 11);
+        this.addSeams('ore', this.oreSeamDensity, 11);
 
         // Recharge seams
         this.random = seedrandom(seeds.rs_seed);
-        this.addRechargeSeams(this.wall_array, this.rechargeSeamDensity);
+        this.addRechargeSeams(this.rechargeSeamDensity);
 
         // Lava Flows / Erosion
         this.random = seedrandom(seeds.erosion_seed);
@@ -290,7 +300,6 @@ class Mapgen {
         if (this.floodType == 7) {
             // Lava
             this.flow_list = this.createFlowList(
-                this.wall_array,
                 this.flowDensity,
                 this.height_array,
                 this.preFlow,
@@ -300,44 +309,43 @@ class Mapgen {
 
         // Set unstable walls and landslide rubble
         this.random = seedrandom(seeds.landslide_seed);
-        this.landslide_list = this.aLandslideHasOccured(this.wall_array, this.landslideDensity);
+        this.landslide_list = this.aLandslideHasOccured(this.landslideDensity);
 
         // Set the starting point
         this.random = seedrandom(seeds.base_seed);
-        this.base = this.chooseBase(this.wall_array);
+        this.base = this.chooseBase();
         if (!this.base) {
             // Make sure there is space to build
             return false;
         }
-        this.setBase(this.base, this.wall_array, this.height_array);
+        this.setBase(this.base, this.height_array);
 
         // Finally done
         return true;
     }
 
     // Add recharge seams to replace solid rock
-    private addRechargeSeams(array: number[][], density: number): void {
-        const rechargeArray = this.createArray(this.size, this.size, -1);
+    private addRechargeSeams(density: number): void {
         this.spiral((x: number, y: number) => {
-            rechargeArray[y][x] = this.randomize(1 - density, 1);
+            this.tiles[y][x].recharge = this.randomize(1 - density, 1);
         });
 
         for (let i = 1; i < this.size - 1; i++) {
             for (let j = 1; j < this.size - 1; j++) {
                 // Only if the space is already solid rock
-                if (array[i][j] == 4 /* Solid rock */) {
+                if (this.tiles[i][j].type == 4 /* Solid rock */) {
                     // Only if at least two opposite sides are solid rock
                     if (
-                        ((array[i + 1][j] == 4 && array[i - 1][j] == 4) ||
-                            (array[i][j + 1] == 4 && array[i][j - 1] == 4)) &&
+                        ((this.tiles[i + 1][j].type == 4 && this.tiles[i - 1][j].type == 4) ||
+                            (this.tiles[i][j + 1].type == 4 && this.tiles[i][j - 1].type == 4)) &&
                         // Only if at least one side is not solid rock
-                        (array[i + 1][j] != 4 ||
-                            array[i - 1][j] != 4 ||
-                            array[i][j + 1] != 4 ||
-                            array[i][j - 1] != 4)
+                        (this.tiles[i + 1][j].type != 4 ||
+                            this.tiles[i - 1][j].type != 4 ||
+                            this.tiles[i][j + 1].type != 4 ||
+                            this.tiles[i][j - 1].type != 4)
                     ) {
-                        if (rechargeArray[i][j]) {
-                            array[i][j] = 12; // Recharge seam
+                        if (this.tiles[i][j].recharge) {
+                            this.tiles[i][j].type = 12; // Recharge seam
                         }
                     }
                 }
@@ -346,43 +354,41 @@ class Mapgen {
     }
 
     // Add Energy Crystal and Ore seams
-    private addSeams(
-        array: number[][],
-        resourceArray: number[][],
-        density: number,
-        seam_type: number
-    ): void {
+    private addSeams(key: keyof Tile, density: number, seam_type: number): void {
         this.spiral((x: number, y: number) => {
             if (this.random() < density) {
-                if (resourceArray[y][x] > 2) {
-                    array[y][x] = seam_type;
+                if (this.tiles[y][x][key] > 2) {
+                    this.tiles[y][x].type = seam_type;
                 }
             }
         });
     }
 
     // A landslide has occured
-    private aLandslideHasOccured(array: number[][], stability: number): number[][][] {
-        const landslideArray: number[][] = this.createArray(this.size, this.size, -1);
+    private aLandslideHasOccured(stability: number): number[][][] {
         this.spiral((x: number, y: number) => {
-            landslideArray[y][x] = this.randomize(1 - stability, -1);
+            this.tiles[y][x].landslide = this.randomize(1 - stability, -1);
         });
 
-        this.speleogenesis(landslideArray);
-        this.details(landslideArray, 3);
+        this.speleogenesis('landslide');
+        this.details('landslide', 3);
 
         // Build the list
         const landslideList: number[][][] = [[], [], []]; // Three different landslide frequencies
         for (let i = 1; i < this.size - 1; i++) {
             for (let j = 1; j < this.size - 1; j++) {
                 // Fill in rubble
-                if (landslideArray[i][j] > 0 && array[i][j] == 0) {
+                if (this.tiles[i][j].landslide > 0 && this.tiles[i][j].type == 0) {
                     // Ground
-                    array[i][j] = 8; // Landslide rubble
+                    this.tiles[i][j].type = 8; // Landslide rubble
                 }
                 // Landslides are possible here
-                if (landslideArray[i][j] > 0 && array[i][j] > 0 && array[i][j] < 4) {
-                    landslideList[landslideArray[i][j] - 1].push([i, j]);
+                if (
+                    this.tiles[i][j].landslide > 0 &&
+                    this.tiles[i][j].type > 0 &&
+                    this.tiles[i][j].type < 4
+                ) {
+                    landslideList[this.tiles[i][j].landslide - 1].push([i, j]);
                 }
             }
         }
@@ -391,23 +397,22 @@ class Mapgen {
     }
 
     // A Slimy Slug is invading your base!
-    private aSlimySlugIsInvadingYourBase(array: number[][], slugDensity: number): void {
-        const slugMap = this.createArray(this.size, this.size, 9);
+    private aSlimySlugIsInvadingYourBase(slugDensity: number): void {
         this.spiral((x: number, y: number) => {
-            slugMap[y][x] = this.randomize(1 - slugDensity ** 3, 9);
+            this.tiles[y][x].slug = this.randomize(1 - slugDensity ** 3, 9);
         });
 
         for (let i = 0; i < this.size; i++) {
             for (let j = 0; j < this.size; j++) {
-                if (slugMap[i][j] && array[i][j] == 0) {
-                    array[i][j] = 9; // Slimy Slug hole
+                if (this.tiles[i][j].slug && this.tiles[i][j].type == 0) {
+                    this.tiles[i][j].type = 9; // Slimy Slug hole
                 }
             }
         }
     }
 
     // Choose a starting point
-    private chooseBase(array: number[][]): number[] {
+    private chooseBase(): number[] {
         // Find all possible starting points
         const possibleBaseList: number[][] = [];
         this.spiral((x: number, y: number) => {
@@ -415,10 +420,10 @@ class Mapgen {
             const preference: number = this.random();
             // Check for a 2x2 ground section to build on
             if (
-                array[y][x] == 0 &&
-                array[y + 1][x] == 0 &&
-                array[y][x + 1] == 0 &&
-                array[y + 1][x + 1] == 0
+                this.tiles[y][x].type == 0 &&
+                this.tiles[y + 1][x].type == 0 &&
+                this.tiles[y][x + 1].type == 0 &&
+                this.tiles[y + 1][x + 1].type == 0
             ) {
                 possibleBaseList.push([y, x, preference]);
             }
@@ -437,7 +442,7 @@ class Mapgen {
     }
 
     // Clean up small map features
-    private cleanup(array: number[][]): void {
+    private cleanup(key: keyof Tile): void {
         const empty = 0;
         let changed = true;
         while (changed == true) {
@@ -445,11 +450,12 @@ class Mapgen {
             for (let i = 1; i < this.size - 1; i++) {
                 for (let j = 1; j < this.size - 1; j++) {
                     if (
-                        (array[i - 1][j] == empty && array[i + 1][j] == empty) ||
-                        (array[i][j - 1] == empty && array[i][j + 1] == empty)
+                        (this.tiles[i - 1][j][key] == empty &&
+                            this.tiles[i + 1][j][key] == empty) ||
+                        (this.tiles[i][j - 1][key] == empty && this.tiles[i][j + 1][key] == empty)
                     ) {
-                        if (array[i][j] != empty) {
-                            array[i][j] = empty;
+                        if (this.tiles[i][j][key] != empty) {
+                            this.tiles[i][j][key] = empty;
                             changed = true;
                         }
                     }
@@ -460,32 +466,30 @@ class Mapgen {
 
     // Create a list of lava flow spaces
     private createFlowList(
-        array: number[][],
         density: number,
         height: number[][],
         preFlow: number,
         heightRange: number
     ): number[][][] {
-        const flowArray: number[][] = this.createArray(this.size, this.size, -1);
         const spillList: number[][][] = [];
         const sources: number[][] = [];
 
         this.spiral((x: number, y: number) => {
             if (this.random() < density) {
-                if (array[y][x] == 0) {
+                if (this.tiles[y][x].type == 0) {
                     sources.push([y, x]); // Possible lava source
                 }
             }
-            if (array[y][x] < 4) {
-                flowArray[y][x] = 0; // Possible spill zone
+            if (this.tiles[y][x].type < 4) {
+                this.tiles[y][x].erosion = 0; // Possible spill zone
             }
         });
 
         // Start spilling from each source
         sources.forEach((source) => {
-            array[source[0]][source[1]] = 7; // Lava
+            this.tiles[source[0]][source[1]].type = 7; // Lava
             const flowList: number[][] = [source];
-            flowArray[source[0]][source[1]] = 1; // Checked
+            this.tiles[source[0]][source[1]].erosion = 1; // Checked
 
             // Find spill zones
             let i: number = 0;
@@ -513,11 +517,11 @@ class Mapgen {
                         height[space[0]][space[1] + 1] +
                         height[space[0] + 1][space[1] + 1];
                     if (
-                        flowArray[space[0]][space[1]] == 0 &&
+                        this.tiles[space[0]][space[1]].erosion == 0 &&
                         sourceElevation > elevation - heightRange * 3
                     ) {
                         flowList.push(space);
-                        flowArray[space[0]][space[1]] = 1; // Checked
+                        this.tiles[space[0]][space[1]].erosion = 1; // Checked
                     }
                 });
                 i += 1;
@@ -528,7 +532,7 @@ class Mapgen {
 
             // Clean up the array for reuse
             flowList.forEach((space) => {
-                flowArray[space[0]][space[1]] = 0;
+                this.tiles[space[0]][space[1]].erosion = 0;
             });
         });
 
@@ -543,8 +547,8 @@ class Mapgen {
                     [sources[j][0], sources[j][1] - 1],
                 ];
                 adjacent.forEach((space) => {
-                    if (array[space[0]][space[1]] == 0) {
-                        array[space[0]][space[1]] = 7; // Lava
+                    if (this.tiles[space[0]][space[1]].type == 0) {
+                        this.tiles[space[0]][space[1]].type = 7; // Lava
                         sources.push(space);
                     }
                 });
@@ -555,19 +559,19 @@ class Mapgen {
     }
 
     // Adjust values based on the distance from open areas
-    private details(array: number[][], maxDistance: number): void {
+    private details(key: keyof Tile, maxDistance: number): void {
         // Set type equal to distance from edge
         for (let n = 0; n < maxDistance; n++) {
             for (let i = 1; i < this.size - 1; i++) {
                 for (let j = 1; j < this.size - 1; j++) {
                     if (
-                        (array[i - 1][j] == n ||
-                            array[i + 1][j] == n ||
-                            array[i][j - 1] == n ||
-                            array[i][j + 1] == n) &&
-                        array[i][j] == -1
+                        (this.tiles[i - 1][j][key] == n ||
+                            this.tiles[i + 1][j][key] == n ||
+                            this.tiles[i][j - 1][key] == n ||
+                            this.tiles[i][j + 1][key] == n) &&
+                        this.tiles[i][j][key] == -1
                     ) {
-                        array[i][j] = n + 1;
+                        this.tiles[i][j][key] = n + 1;
                     }
                 }
             }
@@ -576,8 +580,8 @@ class Mapgen {
         // Fix anything we missed earlier
         for (let i = 1; i < this.size - 1; i++) {
             for (let j = 1; j < this.size - 1; j++) {
-                if (array[i][j] == -1) {
-                    array[i][j] = maxDistance;
+                if (this.tiles[i][j][key] == -1) {
+                    this.tiles[i][j][key] = maxDistance;
                 }
             }
         }
@@ -585,20 +589,20 @@ class Mapgen {
         this.spiral((x: number, y: number) => {
             const blur: number = this.randint_range(-1, 2);
 
-            if (array[y][x] >= 1) {
-                array[y][x] += blur;
-                if (array[y][x] <= 0) {
-                    array[y][x] = 1;
+            if (this.tiles[y][x][key] >= 1) {
+                this.tiles[y][x][key] += blur;
+                if (this.tiles[y][x][key] <= 0) {
+                    this.tiles[y][x][key] = 1;
                 }
-                if (array[y][x] > maxDistance) {
-                    array[y][x] = maxDistance;
+                if (this.tiles[y][x][key] > maxDistance) {
+                    this.tiles[y][x][key] = maxDistance;
                 }
             }
         });
     }
 
     // Fill in all open areas except for the largest one
-    private fillExtra(array: number[][]): boolean {
+    private fillExtra(): boolean {
         // Create the obstacle map
         const unchecked = 0; // Unchecked open space
         const obstacle = -1; // Obstacle
@@ -606,7 +610,7 @@ class Mapgen {
         const tmap: number[][] = this.createArray(this.size, this.size, unchecked);
         for (let i = 0; i < this.size; i++) {
             for (let j = 0; j < this.size; j++) {
-                if (array[i][j] != 0) {
+                if (this.tiles[i][j].solid != 0) {
                     tmap[i][j] = obstacle;
                 }
             }
@@ -626,7 +630,7 @@ class Mapgen {
         spaces.pop(); // Remove the largest
         spaces.forEach((space) => {
             space.forEach((tile) => {
-                array[tile[0]][tile[1]] = obstacle;
+                this.tiles[tile[0]][tile[1]].solid = obstacle;
             });
         });
 
@@ -635,12 +639,7 @@ class Mapgen {
     }
 
     // Flood low areas with a specified liquid
-    private flood(
-        array: number[][],
-        heightArray: number[][],
-        floodLevel: number,
-        floodType: number
-    ): void {
+    private flood(heightArray: number[][], floodLevel: number, floodType: number): void {
         const height = this.size;
         const width = this.size;
 
@@ -659,13 +658,13 @@ class Mapgen {
         for (let i = 0; i < height; i++) {
             for (let j = 0; j < width; j++) {
                 if (
-                    array[i][j] == 0 &&
+                    this.tiles[i][j].type == 0 &&
                     heightArray[i][j] == floodHeight &&
                     heightArray[i + 1][j] == floodHeight &&
                     heightArray[i][j + 1] == floodHeight &&
                     heightArray[i + 1][j + 1] == floodHeight
                 ) {
-                    array[i][j] = floodType;
+                    this.tiles[i][j].type = floodType;
                 }
             }
         }
@@ -829,13 +828,13 @@ class Mapgen {
     }
 
     // Set up the base at the chosen location
-    private setBase(base: number[], array: number[][], height: number[][]): void {
+    private setBase(base: number[], height: number[][]): void {
         if (!base.length) {
             return;
         }
         // Place building power paths under the tool store
-        array[base[0]][base[1]] = 13; // Building power path
-        array[base[0] + 1][base[1]] = 13; // Building power path
+        this.tiles[base[0]][base[1]].type = 13; // Building power path
+        this.tiles[base[0] + 1][base[1]].type = 13; // Building power path
 
         // Change geography to accomodate our buildings
         const average: number = Math.floor(
@@ -852,7 +851,7 @@ class Mapgen {
     }
 
     // Shape the random noise into caves
-    private speleogenesis(array: number[][]): void {
+    private speleogenesis(key: keyof Tile): void {
         const empty = 0;
         const filled = -1;
         let changed: boolean = true;
@@ -860,7 +859,12 @@ class Mapgen {
             // Run until nothing changes
             changed = false;
 
-            const tmap: number[][] = structuredClone(array);
+            const tmap: number[][] = this.createArray(this.size, this.size, null);
+            for (let i = 0; i < this.size; i++) {
+                for (let j = 0; j < this.size; j++) {
+                    tmap[i][j] = this.tiles[i][j][key];
+                }
+            }
 
             // Decide which spaces to change
             for (let i = 1; i < this.size - 1; i++) {
@@ -882,17 +886,17 @@ class Mapgen {
 
                     // Change to empty if all neighbors are empty
                     if (adjacent == 0) {
-                        if (array[i][j] != empty) {
+                        if (this.tiles[i][j][key] != empty) {
                             changed = true;
-                            array[i][j] = empty;
+                            this.tiles[i][j][key] = empty;
                         }
                     }
 
                     // Change to filled if at least three neighbors are filled
                     else if (adjacent >= 3) {
-                        if (array[i][j] != filled) {
+                        if (this.tiles[i][j][key] != filled) {
                             changed = true;
-                            array[i][j] = filled;
+                            this.tiles[i][j][key] = filled;
                         }
                     }
                 }
@@ -901,12 +905,7 @@ class Mapgen {
     }
 
     // Count how many crystals we can actually get from where we start to prevent impossible levels
-    private countAccessibleCrystals(
-        array: number[][],
-        base: number[],
-        crystalArray: number[][],
-        vehicles: boolean
-    ) {
+    private countAccessibleCrystals(base: number[], vehicles: boolean) {
         const spaces: number[][] = [base];
         const tmap = this.createArray(this.size, this.size, -1);
 
@@ -919,7 +918,7 @@ class Mapgen {
 
         // Mark which spaces could be accessible
         this.spiral((x: number, y: number) => {
-            if (types.includes(array[y][x])) {
+            if (types.includes(this.tiles[y][x].type)) {
                 tmap[y][x] = 0; //Accessible
             }
         }, 1);
@@ -955,21 +954,21 @@ class Mapgen {
         // Count crystals in our list
         let count: number = 0;
         spaces.forEach((space) => {
-            count += crystalArray[space[0]][space[1]];
+            count += this.tiles[space[0]][space[1]].crystals;
         });
 
         return count;
     }
 
     // Make a list of undiscovered caverns
-    private findCaves(array: number[][], base: number[]) {
+    private findCaves(base: number[]) {
         // Mark our obstacles
         const tmap = this.createArray(this.size, this.size, -1);
 
         // Mark the open spaces
         const openTiles = [0, 6, 7, 8, 9, 13];
         this.spiral((x: number, y: number) => {
-            if (openTiles.includes(array[y][x])) {
+            if (openTiles.includes(this.tiles[y][x].type)) {
                 tmap[y][x] = 0;
             }
         }, 1);
@@ -992,20 +991,10 @@ class Mapgen {
     // Convert to a Manic Miners level file
     public save(): string {
         // Count all the crystals we can reach
-        let crystalCount: number = this.countAccessibleCrystals(
-            this.wall_array,
-            this.base,
-            this.crystal_array,
-            false
-        );
+        let crystalCount: number = this.countAccessibleCrystals(this.base, false);
         if (crystalCount >= 14) {
             // More than enough crystals to get vehicles
-            crystalCount = this.countAccessibleCrystals(
-                this.wall_array,
-                this.base,
-                this.crystal_array,
-                true
-            );
+            crystalCount = this.countAccessibleCrystals(this.base, true);
         }
         // Basic info
         let MMtext: string =
@@ -1055,11 +1044,11 @@ class Mapgen {
         // Apply the conversion
         const converted_walls = this.createArray(this.size, this.size, null);
         this.spiral((x: number, y: number) => {
-            converted_walls[y][x] = conversion[this.wall_array[y][x]];
+            converted_walls[y][x] = conversion[this.tiles[y][x].type];
         }, 0);
 
         // List undiscovered caverns
-        const caveList = this.findCaves(this.wall_array, this.base);
+        const caveList = this.findCaves(this.base);
 
         // Hide undiscovered caverns
         caveList.forEach((cave) => {
@@ -1094,7 +1083,7 @@ class Mapgen {
         MMtext += 'crystals:\n';
         for (let i = 0; i < this.size; i++) {
             for (let j = 0; j < this.size; j++) {
-                MMtext += this.crystal_array[i][j] + ',';
+                MMtext += this.tiles[i][j].crystals + ',';
             }
             MMtext += '\n';
         }
@@ -1103,7 +1092,7 @@ class Mapgen {
         MMtext += 'ore:\n';
         for (let i = 0; i < this.size; i++) {
             for (let j = 0; j < this.size; j++) {
-                MMtext += this.ore_array[i][j] + ',';
+                MMtext += this.tiles[i][j].ore + ',';
             }
             MMtext += '\n';
         }
