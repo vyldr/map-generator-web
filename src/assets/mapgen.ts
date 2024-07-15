@@ -50,6 +50,9 @@ class Mapgen {
     public landslideDensity!: number;
     public landslideInterval!: number;
 
+    // Monsters
+    public monsterDensity!: number;
+
     // Slugs
     public slugDensity!: number;
 
@@ -85,6 +88,9 @@ class Mapgen {
         // Landslides
         this.landslideDensity = this.random() * 0.4;
         this.landslideInterval = this.randint_range(10, 91);
+
+        // Monsters
+        this.monsterDensity = this.random() * 0.2;
 
         // Slugs
         this.slugDensity = this.random() * 0.2;
@@ -191,6 +197,7 @@ class Mapgen {
             rs_seed: String(this.random()),
             erosion_seed: String(this.random()),
             landslide_seed: String(this.random()),
+            monster_seed: String(this.random()),
             base_seed: String(this.random()),
         };
 
@@ -311,6 +318,10 @@ class Mapgen {
         this.random = seedrandom(seeds.landslide_seed);
         this.landslide_list = this.aLandslideHasOccured(this.landslideDensity);
 
+        // Set monster emerges and triggers
+        this.random = seedrandom(seeds.monster_seed);
+        this.aMonsterHasAppeared(seeds.monster_seed);
+
         // Set the starting point
         this.random = seedrandom(seeds.base_seed);
         this.base = this.chooseBase();
@@ -357,7 +368,7 @@ class Mapgen {
     private addSeams(key: keyof Tile, density: number, seam_type: number): void {
         this.spiral((x: number, y: number) => {
             if (this.random() < density) {
-                if (this.tiles[y][x][key] > 2) {
+                if ((this.tiles[y][x][key] as number) > 2) {
                     this.tiles[y][x].type = seam_type;
                 }
             }
@@ -394,6 +405,38 @@ class Mapgen {
         }
 
         return landslideList;
+    }
+
+    // A Monster has appeared
+    private aMonsterHasAppeared(seed: string): void {
+        this.spiral((x: number, y: number) => {
+            this.tiles[y][x].monster = this.randomize(1 - this.monsterDensity, -1);
+        });
+        this.speleogenesis('monster');
+
+        // Reset the RNG
+        this.random = seedrandom(seed);
+
+        // Valid monster emerge tile types
+        const emergeTypes = new Set([
+            1, // Dirt
+            2, // Loose Rock
+            3, // Hard Rock
+        ]);
+
+        // Unique id for each trigger and emerge
+        let id: number = 2; // Start from 2 because the level editor starts from 2
+        this.spiral((x: number, y: number) => {
+            if (this.tiles[y][x].monster && emergeTypes.has(this.tiles[y][x].type)) {
+                this.tiles[y][x].emergeId = id++;
+                if (this.chooseTrigger(this.tiles[y][x], id)) {
+                    id++;
+                }
+            } else {
+                this.tiles[y][x].monster = 0;
+                this.random(); // Pull one RNG per tile
+            }
+        });
     }
 
     // A Slimy Slug is invading your base!
@@ -441,6 +484,51 @@ class Mapgen {
         return [possibleBaseList[0][0], possibleBaseList[0][1]];
     }
 
+    // Choose a tile to trigger a monster emerge
+    private chooseTrigger(tile: Tile, id: number): boolean {
+        // Set of all tile types that can be a trigger
+        const triggerTypes = new Set([
+            0, // Ground
+            1, // Dirt
+            2, // Loose Rock
+            3, // Hard Rock
+            6, // Water
+            7, // Lava
+            8, // Landslide rubble
+            9, // Slimy Slug hole
+            10, // Energy Crystal Seam
+            11, // Ore Seam
+        ]);
+
+        // List all tiles in a 7x7 box centered on the current tile
+        let nearbyTiles: Tile[] = [];
+        const minx = Math.max(tile.x - 3, 0);
+        const maxx = Math.min(tile.x + 4, this.size);
+        const miny = Math.max(tile.y - 3, 0);
+        const maxy = Math.min(tile.y + 4, this.size);
+        for (let i = miny; i < maxy; i++) {
+            for (let j = minx; j < maxx; j++) {
+                if (this.tiles[i][j] != tile) {
+                    nearbyTiles.push(this.tiles[i][j]);
+                }
+            }
+        }
+
+        // Remove all tiles that can't be triggers
+        nearbyTiles = nearbyTiles.filter((trigger) => triggerTypes.has(trigger.type));
+
+        // Cancel if there are no valid trigger locations
+        if (!nearbyTiles.length) {
+            return false;
+        }
+
+        // Choose a trigger
+        const trigger = nearbyTiles[this.randint_range(0, nearbyTiles.length)];
+        trigger.addTrigger(tile);
+        trigger.triggerId = id;
+        return true;
+    }
+
     // Clean up small map features
     private cleanup(key: keyof Tile): void {
         const empty = 0;
@@ -455,7 +543,7 @@ class Mapgen {
                         (this.tiles[i][j - 1][key] == empty && this.tiles[i][j + 1][key] == empty)
                     ) {
                         if (this.tiles[i][j][key] != empty) {
-                            this.tiles[i][j][key] = empty;
+                            (this.tiles[i][j][key] as number) = empty;
                             changed = true;
                         }
                     }
@@ -571,7 +659,7 @@ class Mapgen {
                             this.tiles[i][j + 1][key] == n) &&
                         this.tiles[i][j][key] == -1
                     ) {
-                        this.tiles[i][j][key] = n + 1;
+                        (this.tiles[i][j][key] as number) = n + 1;
                     }
                 }
             }
@@ -581,7 +669,7 @@ class Mapgen {
         for (let i = 1; i < this.size - 1; i++) {
             for (let j = 1; j < this.size - 1; j++) {
                 if (this.tiles[i][j][key] == -1) {
-                    this.tiles[i][j][key] = maxDistance;
+                    (this.tiles[i][j][key] as number) = maxDistance;
                 }
             }
         }
@@ -589,13 +677,13 @@ class Mapgen {
         this.spiral((x: number, y: number) => {
             const blur: number = this.randint_range(-1, 2);
 
-            if (this.tiles[y][x][key] >= 1) {
-                this.tiles[y][x][key] += blur;
-                if (this.tiles[y][x][key] <= 0) {
-                    this.tiles[y][x][key] = 1;
+            if ((this.tiles[y][x][key] as number) >= 1) {
+                (this.tiles[y][x][key] as number) += blur;
+                if ((this.tiles[y][x][key] as number) <= 0) {
+                    (this.tiles[y][x][key] as number) = 1;
                 }
-                if (this.tiles[y][x][key] > maxDistance) {
-                    this.tiles[y][x][key] = maxDistance;
+                if ((this.tiles[y][x][key] as number) > maxDistance) {
+                    (this.tiles[y][x][key] as number) = maxDistance;
                 }
             }
         });
@@ -862,7 +950,7 @@ class Mapgen {
             const tmap: number[][] = this.createArray(this.size, this.size, null);
             for (let i = 0; i < this.size; i++) {
                 for (let j = 0; j < this.size; j++) {
-                    tmap[i][j] = this.tiles[i][j][key];
+                    tmap[i][j] = this.tiles[i][j][key] as number;
                 }
             }
 
@@ -886,9 +974,9 @@ class Mapgen {
 
                     // Change to empty if all neighbors are empty
                     if (adjacent == 0) {
-                        if (this.tiles[i][j][key] != empty) {
+                        if ((this.tiles[i][j][key] as number) != empty) {
                             changed = true;
-                            this.tiles[i][j][key] = empty;
+                            (this.tiles[i][j][key] as number) = empty;
                         }
                     }
 
@@ -896,7 +984,7 @@ class Mapgen {
                     else if (adjacent >= 3) {
                         if (this.tiles[i][j][key] != filled) {
                             changed = true;
-                            this.tiles[i][j][key] = filled;
+                            (this.tiles[i][j][key] as number) = filled;
                         }
                     }
                 }
@@ -1179,8 +1267,76 @@ class Mapgen {
         MMtext +=
             'You must collect ' +
             Math.min(Math.floor(crystalCount / 2), 999) +
-            ' energy crystals.  \n';
+            ' energy crystals.  \n\n';
         MMtext += '}\n';
+
+        // Briefing success
+        MMtext += 'briefingsuccess{\n';
+        MMtext += 'You did it \n\n';
+        MMtext += '}\n';
+
+        // Briefing failure
+        MMtext += 'briefingfailure{\n';
+        MMtext += "You didn't it \n\n";
+        MMtext += '}\n';
+
+        // Monster emerges
+        MMtext += 'blocks{\n';
+
+        // Emerge tiles
+        let monsterType: string;
+        switch (this.biome) {
+            case 'rock':
+                monsterType = 'CreatureRockMonster_C';
+                break;
+            case 'ice':
+                monsterType = 'CreatureIceMonster_C';
+                break;
+            case 'lava':
+                monsterType = 'CreatureLavaMonster_C';
+                break;
+
+            default:
+                break;
+        }
+        this.spiral((x: number, y: number) => {
+            if (this.tiles[y][x].emergeId) {
+                MMtext +=
+                    this.tiles[y][x].emergeId +
+                    '/EventEmergeCreature:' +
+                    y +
+                    ',' +
+                    x +
+                    ',A,90.0,' +
+                    monsterType +
+                    ',1\n';
+            }
+        });
+
+        // Trigger tiles
+        this.spiral((x: number, y: number) => {
+            if (this.tiles[y][x].triggerId) {
+                MMtext +=
+                    this.tiles[y][x].triggerId +
+                    '/TriggerEnter:' +
+                    y +
+                    ',' +
+                    x +
+                    ',0.0,_,true,true\n';
+            }
+        });
+
+        // Wires
+        this.spiral((x: number, y: number) => {
+            this.tiles[y][x].getTriggers().forEach((wire) => {
+                MMtext += this.tiles[y][x].triggerId + '?' + wire.emergeId + '\n';
+            });
+        });
+
+        MMtext += '}\n';
+
+        // Script
+        MMtext += 'script{\n\n}';
 
         return MMtext;
     }

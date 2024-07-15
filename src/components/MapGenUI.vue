@@ -311,6 +311,18 @@ function download() {
             </div>
 
             <div class="animation-item">
+                <span class="input-label">Monsters</span>
+                <input
+                    type="range"
+                    v-model="mapgen.monsterDensity"
+                    @input="render"
+                    min="0"
+                    max="1"
+                    step="0.01"
+                />
+            </div>
+
+            <div class="animation-item">
                 <span class="input-label">Height Algorithm</span>
                 <div class="flex-input-container">
                     <div class="flex-spacer" />

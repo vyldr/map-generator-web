@@ -10,6 +10,7 @@ class MapDisplay {
     private ctx: CanvasRenderingContext2D;
     // Color conversions
     private colors: { [n: number]: string } = {
+        // Tiles
         0: 'rgb(24,    0,  59)', // Ground
         1: 'rgb(166,  72, 233)', // Dirt
         2: 'rgb(139,  43, 199)', // Loose Rock
@@ -23,6 +24,10 @@ class MapDisplay {
         11: 'rgb(146,  62,  20)', // Ore Seam
         12: 'rgb(250, 255,  14)', // Recharge Seam
         13: 'rgb(190, 190, 190)', // Building power path
+        // Not tiles
+        14: 'rgb(255,   0,   0)', // Monster
+        15: 'rgb(255, 128,   0)', // Wire
+        16: 'rgb(255, 255,   0)', // Trigger
     };
 
     // Display the map to the canvas
@@ -60,8 +65,12 @@ class MapDisplay {
                         scale - separator,
                         scale - separator
                     );
+                }
+            }
 
-                    // Draw the crystal and ore indicators
+            for (let i = 0; i < tiles.length; i++) {
+                for (let j = 0; j < tiles[0].length; j++) {
+                    // Draw the crystal indicators
                     if (tiles[i][j].crystals > 0) {
                         this.ctx.fillStyle = this.colors[10];
                         this.ctx.fillRect(
@@ -72,6 +81,7 @@ class MapDisplay {
                         );
                     }
 
+                    // Draw the ore indicators
                     if (tiles[i][j].ore > 0) {
                         this.ctx.fillStyle = this.colors[11];
                         this.ctx.fillRect(
@@ -81,6 +91,53 @@ class MapDisplay {
                             1 * separator
                         );
                     }
+
+                    // Draw the monster emerge indicators
+                    if (tiles[i][j].monster) {
+                        this.ctx.fillStyle = this.colors[14];
+                        this.ctx.beginPath();
+                        this.ctx.ellipse(
+                            (j + 0.5) * scale + offset,
+                            (i + 0.5) * scale + offset,
+                            scale / 4,
+                            scale / 4,
+                            0,
+                            0,
+                            2 * Math.PI
+                        );
+                        this.ctx.fill();
+                    }
+
+                    // Draw the monster trigger indicators
+                    const monsterTriggers = tiles[i][j].getTriggers();
+                    if (monsterTriggers.length) {
+                        this.ctx.strokeStyle = this.colors[16];
+                        this.ctx.lineWidth = separator;
+                        this.ctx.beginPath();
+                        this.ctx.ellipse(
+                            (j + 0.5) * scale + offset,
+                            (i + 0.5) * scale + offset,
+                            scale / 4,
+                            scale / 4,
+                            0,
+                            0,
+                            2 * Math.PI
+                        );
+                        this.ctx.stroke();
+                    }
+
+                    // Draw trigger wires
+                    monsterTriggers.forEach((target) => {
+                        this.ctx.strokeStyle = this.colors[15];
+                        const wire: Path2D = new Path2D();
+                        wire.moveTo((j + 0.5) * scale + offset, (i + 0.5) * scale + offset);
+                        wire.lineTo(
+                            (target.x + 0.5) * scale + offset,
+                            (target.y + 0.5) * scale + offset
+                        );
+                        wire.closePath();
+                        this.ctx.stroke(wire);
+                    });
                 }
             }
         } else if (viewMode == 2) {

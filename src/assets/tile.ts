@@ -7,12 +7,17 @@ class Tile {
         this.wall = -1;
         this.solid = -1;
         this.crystals = -1;
-        this.ore = 0;
+        this.ore = -1;
         this.recharge = -1;
 
-        this.landslide = -1;
+        this.landslide = 0;
         this.erosion = -1;
-        this.slug = 9;
+        this.slug = 0;
+        this.monster = 0;
+
+        this.monsterTriggers = [];
+        this.triggerId = 0;
+        this.emergeId = 0;
     }
 
     public x: number;
@@ -28,6 +33,19 @@ class Tile {
     public landslide: number;
     public erosion: number;
     public slug: number;
+    public monster: number;
+
+    private monsterTriggers: Tile[];
+    public triggerId: number;
+    public emergeId: number;
+
+    public addTrigger(tile: Tile): void {
+        this.monsterTriggers.push(tile);
+    }
+
+    public getTriggers(): Tile[] {
+        return this.monsterTriggers;
+    }
 }
 
 export default Tile;
