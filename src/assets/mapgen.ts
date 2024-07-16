@@ -415,7 +415,7 @@ class Mapgen {
         this.speleogenesis('monster');
 
         // Reset the RNG
-        this.random = seedrandom(seed);
+        this.random = seedrandom(seed + 1);
 
         // Valid monster emerge tile types
         const emergeTypes = new Set([
