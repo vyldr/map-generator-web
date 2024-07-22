@@ -31,7 +31,13 @@ class MapDisplay {
     };
 
     // Display the map to the canvas
-    public render(tiles: Tile[][], heightArray: number[][], viewMode: number) {
+    public render(
+        tiles: Tile[][],
+        heightArray: number[][],
+        viewMode: number,
+        offsetX: number,
+        offsetY: number
+    ) {
         // Clear the canvas
         this.ctx.clearRect(0, 0, this.ctx.canvas.width, this.ctx.canvas.height);
 
@@ -132,8 +138,8 @@ class MapDisplay {
                         const wire: Path2D = new Path2D();
                         wire.moveTo((j + 0.5) * scale + offset, (i + 0.5) * scale + offset);
                         wire.lineTo(
-                            (target.x + 0.5) * scale + offset,
-                            (target.y + 0.5) * scale + offset
+                            (target.x - offsetX + 0.5) * scale + offset,
+                            (target.y - offsetY + 0.5) * scale + offset
                         );
                         wire.closePath();
                         this.ctx.stroke(wire);

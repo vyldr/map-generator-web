@@ -1,32 +1,25 @@
-import seedrandom, { type PRNG } from 'seedrandom';
 import Tile from './tile';
 
 class Mapgen {
     constructor() {
-        this.seed = String(Math.floor(Math.random() * 1000000000000000));
-        this.random = seedrandom(this.seed);
+        this.seed = Math.floor(Math.random() * 2 ** 32);
         this.shuffle_parameters();
-
-        this.tiles = [];
-        this.height_array = [];
-        this.flow_list = [];
-        this.landslide_list = [];
-        this.base = [];
-
-        this.size = 32;
     }
 
-    public random: PRNG;
+    private flow_list: number[][][] = [];
+    private landslide_list: number[][][] = [];
+    private base: number[] = [];
 
-    private flow_list: number[][][];
-    private landslide_list: number[][][];
-    private base: number[];
+    public tiles: Tile[][] = [];
+    public height_array: number[][] = [];
 
-    public tiles: Tile[][];
-    public height_array: number[][];
-
-    public seed: string | number;
-    public size: number;
+    public seed: number;
+    private step: number = 0;
+    public size: number = 32;
+    public offsetX: number = 0;
+    public offsetY: number = 0;
+    public inputOffsetX: number = 0;
+    public inputOffsetY: number = 0;
 
     // Walls
     public solidDensity!: number;
@@ -68,32 +61,32 @@ class Mapgen {
 
     public shuffle_parameters(): void {
         // Walls
-        this.solidDensity = this.random() * 0.3 + 0.2;
-        this.wallDensity = this.random() * 0.3 + 0.3;
-        this.oreDensity = this.random() * 0.3 + 0.3;
-        this.crystalDensity = this.random() * 0.3 + 0.2;
-        this.oreSeamDensity = this.random() * 0.25;
-        this.crystalSeamDensity = this.random() * 0.5;
-        this.rechargeSeamDensity = this.random() * 0.08 + 0.01;
+        this.solidDensity = Math.random() * 0.3 + 0.2;
+        this.wallDensity = Math.random() * 0.3 + 0.3;
+        this.oreDensity = Math.random() * 0.3 + 0.3;
+        this.crystalDensity = Math.random() * 0.3 + 0.2;
+        this.oreSeamDensity = Math.random() * 0.25;
+        this.crystalSeamDensity = Math.random() * 0.5;
+        this.rechargeSeamDensity = Math.random() * 0.08 + 0.01;
 
         // Water/Lava
-        this.floodLevel = this.random() * 0.75;
+        this.floodLevel = Math.random() * 0.75;
         this.floodType = this.randint_range(6, 8);
 
         // Erosion
-        this.flowDensity = this.random() * 0.005;
+        this.flowDensity = Math.random() * 0.005;
         this.flowInterval = this.randint_range(20, 181);
         this.preFlow = this.randint_range(3, 9);
 
         // Landslides
-        this.landslideDensity = this.random() * 0.4;
+        this.landslideDensity = Math.random() * 0.4;
         this.landslideInterval = this.randint_range(10, 91);
 
         // Monsters
-        this.monsterDensity = this.random() * 0.2;
+        this.monsterDensity = Math.random() * 0.2;
 
         // Slugs
-        this.slugDensity = this.random() * 0.2;
+        this.slugDensity = Math.random() * 0.2;
 
         // Height
         this.heightAlgo = 0;
@@ -110,7 +103,29 @@ class Mapgen {
     // Choose a random integer (a <= x < b)
     private randint_range(a: number, b: number): number {
         const range: number = b - a;
-        return Math.floor(this.random() * range) + a;
+        return Math.floor(this.randomXY(0, 0) * range) + a;
+    }
+
+    // Choose a random number 0 <= n < 1 that is consistent for a given seed
+    // and coordinates.  Based on FNV-1a
+    private randomXY(x: number, y: number): number {
+        let hash = 2166136261; // Offset basis
+        const arr = [this.step, x, y, this.seed, 1];
+        // const arr = [this.step, this.seed, x, y]; // Fun alternative, generates the far lands
+
+        for (let i = 0; i < arr.length; i++) {
+            hash ^= arr[i];
+            hash *= 16777619; // FNV prime
+            hash >>>= 0; // Convert to uint_32
+        }
+
+        return hash / 2 ** 32;
+    }
+
+    // Choose a random integer (a <= x < b)
+    private randint_rangeXY(a: number, b: number, x: number, y: number): number {
+        const range: number = b - a;
+        return Math.floor(this.randomXY(x, y) * range) + a;
     }
 
     // Create a 2d array and initialize each item
@@ -182,31 +197,19 @@ class Mapgen {
     }
 
     public mapgen(): boolean {
-        // Load the seed
-        // @ts-expect-error
-        this.random = seedrandom(this.seed);
-        const seeds = {
-            solid_seed: String(this.random()),
-            other_seed: String(this.random()),
-            ore_seed: String(this.random()),
-            crystal_seed: String(this.random()),
-            height_seed: String(this.random()),
-            slug_seed: String(this.random()),
-            ecs_seed: String(this.random()),
-            os_seed: String(this.random()),
-            rs_seed: String(this.random()),
-            erosion_seed: String(this.random()),
-            landslide_seed: String(this.random()),
-            monster_seed: String(this.random()),
-            base_seed: String(this.random()),
-        };
+        // Reset the step counter for predictable RNG
+        this.step = 0;
 
         // Round up to the next chunk
         this.size = Math.floor((this.size + 7) / 8) * 8;
 
+        // Calculate the tile offset
+        this.offsetX = this.inputOffsetX - this.size / 2;
+        this.offsetY = this.inputOffsetY - this.size / 2;
+
         // Initialize the Tile array
         this.tiles = this.createArray(this.size, this.size, (y: number, x: number) => {
-            return new Tile(y, x);
+            return new Tile(y + this.offsetY, x + this.offsetX);
         });
 
         // Optionally set oxygen
@@ -215,13 +218,13 @@ class Mapgen {
         }
 
         // Create the dirt, loose rock, and solid rock
-        this.random = seedrandom(seeds.other_seed);
+        this.step++;
         this.spiral((x: number, y: number) => {
-            this.tiles[y][x].wall = this.randomize(1 - this.wallDensity, -1);
+            this.tiles[y][x].wall = this.randomize(1 - this.wallDensity, -1, this.tiles[y][x]);
         });
         this.speleogenesis('wall');
         this.cleanup('wall');
-        this.random = seedrandom(seeds.other_seed); // Use fresh RNG
+        this.step++;
         this.details('wall', 3);
         // Apply to the tiles
         this.spiral((x: number, y: number) => {
@@ -229,9 +232,9 @@ class Mapgen {
         });
 
         // Create the solid rock
-        this.random = seedrandom(seeds.solid_seed);
+        this.step++;
         this.spiral((x: number, y: number) => {
-            this.tiles[y][x].solid = this.randomize(1 - this.solidDensity, -1);
+            this.tiles[y][x].solid = this.randomize(1 - this.solidDensity, -1, this.tiles[y][x]);
         });
         this.speleogenesis('solid');
         this.cleanup('solid');
@@ -244,27 +247,31 @@ class Mapgen {
         }, 0);
 
         // Create ore
-        this.random = seedrandom(seeds.ore_seed);
+        this.step++;
         this.spiral((x: number, y: number) => {
-            this.tiles[y][x].ore = this.randomize(1 - this.oreDensity, -1);
+            this.tiles[y][x].ore = this.randomize(1 - this.oreDensity, -1, this.tiles[y][x]);
         });
         this.speleogenesis('ore');
         this.cleanup('ore');
-        this.random = seedrandom(seeds.ore_seed); // Use fresh RNG
+        this.step++;
         this.details('ore', 4);
 
         // Create crystals
-        this.random = seedrandom(seeds.crystal_seed);
+        this.step++;
         this.spiral((x: number, y: number) => {
-            this.tiles[y][x].crystals = this.randomize(1 - this.crystalDensity, -1);
+            this.tiles[y][x].crystals = this.randomize(
+                1 - this.crystalDensity,
+                -1,
+                this.tiles[y][x]
+            );
         });
         this.speleogenesis('crystals');
         this.cleanup('crystals');
-        this.random = seedrandom(seeds.crystal_seed); // Use fresh RNG
+        this.step++;
         this.details('crystals', 5);
 
         // Create a height map
-        this.random = seedrandom(seeds.height_seed);
+        this.step++;
 
         if (this.heightAlgo == 0) {
             this.height_array = this.heightMapSquares();
@@ -286,23 +293,23 @@ class Mapgen {
         }
 
         // Slimy Slug holes
-        this.random = seedrandom(seeds.slug_seed);
+        this.step++;
         this.aSlimySlugIsInvadingYourBase(this.slugDensity);
 
         // Energy Crystal Seams
-        this.random = seedrandom(seeds.ecs_seed);
+        this.step++;
         this.addSeams('crystals', this.crystalSeamDensity, 10);
 
         // Ore Seams
-        this.random = seedrandom(seeds.os_seed);
+        this.step++;
         this.addSeams('ore', this.oreSeamDensity, 11);
 
         // Recharge seams
-        this.random = seedrandom(seeds.rs_seed);
+        this.step++;
         this.addRechargeSeams(this.rechargeSeamDensity);
 
         // Lava Flows / Erosion
-        this.random = seedrandom(seeds.erosion_seed);
+        this.step++;
         this.flow_list = [];
         if (this.floodType == 7) {
             // Lava
@@ -315,17 +322,18 @@ class Mapgen {
         }
 
         // Set unstable walls and landslide rubble
-        this.random = seedrandom(seeds.landslide_seed);
+        this.step++;
         this.landslide_list = this.aLandslideHasOccured(this.landslideDensity);
 
         // Set monster emerges and triggers
-        this.random = seedrandom(seeds.monster_seed);
-        this.aMonsterHasAppeared(seeds.monster_seed);
+        this.step++;
+        this.aMonsterHasAppeared();
 
         // Set the starting point
-        this.random = seedrandom(seeds.base_seed);
+        this.step++;
         this.base = this.chooseBase();
-        if (!this.base) {
+
+        if (!this.base.length) {
             // Make sure there is space to build
             return false;
         }
@@ -338,7 +346,7 @@ class Mapgen {
     // Add recharge seams to replace solid rock
     private addRechargeSeams(density: number): void {
         this.spiral((x: number, y: number) => {
-            this.tiles[y][x].recharge = this.randomize(1 - density, 1);
+            this.tiles[y][x].recharge = this.randomize(1 - density, 1, this.tiles[y][x]);
         });
 
         for (let i = 1; i < this.size - 1; i++) {
@@ -367,7 +375,7 @@ class Mapgen {
     // Add Energy Crystal and Ore seams
     private addSeams(key: keyof Tile, density: number, seam_type: number): void {
         this.spiral((x: number, y: number) => {
-            if (this.random() < density) {
+            if (this.randomXY(this.tiles[y][x].x, this.tiles[y][x].y) < density) {
                 if ((this.tiles[y][x][key] as number) > 2) {
                     this.tiles[y][x].type = seam_type;
                 }
@@ -378,7 +386,7 @@ class Mapgen {
     // A landslide has occured
     private aLandslideHasOccured(stability: number): number[][][] {
         this.spiral((x: number, y: number) => {
-            this.tiles[y][x].landslide = this.randomize(1 - stability, -1);
+            this.tiles[y][x].landslide = this.randomize(1 - stability, -1, this.tiles[y][x]);
         });
 
         this.speleogenesis('landslide');
@@ -408,14 +416,18 @@ class Mapgen {
     }
 
     // A Monster has appeared
-    private aMonsterHasAppeared(seed: string): void {
+    private aMonsterHasAppeared(): void {
         this.spiral((x: number, y: number) => {
-            this.tiles[y][x].monster = this.randomize(1 - this.monsterDensity, -1);
+            this.tiles[y][x].monster = this.randomize(
+                1 - this.monsterDensity,
+                -1,
+                this.tiles[y][x]
+            );
         });
         this.speleogenesis('monster');
 
         // Reset the RNG
-        this.random = seedrandom(seed + 1);
+        this.step++;
 
         // Valid monster emerge tile types
         const emergeTypes = new Set([
@@ -434,7 +446,6 @@ class Mapgen {
                 }
             } else {
                 this.tiles[y][x].monster = 0;
-                this.random(); // Pull one RNG per tile
             }
         });
     }
@@ -442,7 +453,7 @@ class Mapgen {
     // A Slimy Slug is invading your base!
     private aSlimySlugIsInvadingYourBase(slugDensity: number): void {
         this.spiral((x: number, y: number) => {
-            this.tiles[y][x].slug = this.randomize(1 - slugDensity ** 3, 9);
+            this.tiles[y][x].slug = this.randomize(1 - slugDensity ** 3, 9, this.tiles[y][x]);
         });
 
         for (let i = 0; i < this.size; i++) {
@@ -460,7 +471,7 @@ class Mapgen {
         const possibleBaseList: number[][] = [];
         this.spiral((x: number, y: number) => {
             // Choose a random value as the location preference
-            const preference: number = this.random();
+            const preference: number = this.randomXY(this.tiles[y][x].x, this.tiles[y][x].y);
             // Check for a 2x2 ground section to build on
             if (
                 this.tiles[y][x].type == 0 &&
@@ -502,10 +513,10 @@ class Mapgen {
 
         // List all tiles in a 7x7 box centered on the current tile
         let nearbyTiles: Tile[] = [];
-        const minx = Math.max(tile.x - 3, 0);
-        const maxx = Math.min(tile.x + 4, this.size);
-        const miny = Math.max(tile.y - 3, 0);
-        const maxy = Math.min(tile.y + 4, this.size);
+        const minx = Math.max(tile.x - this.offsetX - 3, 0);
+        const maxx = Math.min(tile.x - this.offsetX + 4, this.size);
+        const miny = Math.max(tile.y - this.offsetY - 3, 0);
+        const maxy = Math.min(tile.y - this.offsetY + 4, this.size);
         for (let i = miny; i < maxy; i++) {
             for (let j = minx; j < maxx; j++) {
                 if (this.tiles[i][j] != tile) {
@@ -523,7 +534,7 @@ class Mapgen {
         }
 
         // Choose a trigger
-        const trigger = nearbyTiles[this.randint_range(0, nearbyTiles.length)];
+        const trigger = nearbyTiles[this.randint_rangeXY(0, nearbyTiles.length, tile.x, tile.y)];
         trigger.addTrigger(tile);
         trigger.triggerId = id;
         return true;
@@ -563,7 +574,7 @@ class Mapgen {
         const sources: number[][] = [];
 
         this.spiral((x: number, y: number) => {
-            if (this.random() < density) {
+            if (this.randomXY(this.tiles[y][x].x, this.tiles[y][x].y) < density) {
                 if (this.tiles[y][x].type == 0) {
                     sources.push([y, x]); // Possible lava source
                 }
@@ -675,7 +686,7 @@ class Mapgen {
         }
 
         this.spiral((x: number, y: number) => {
-            const blur: number = this.randint_range(-1, 2);
+            const blur: number = this.randint_rangeXY(-1, 2, x + this.offsetX, y + this.offsetY);
 
             if ((this.tiles[y][x][key] as number) >= 1) {
                 (this.tiles[y][x][key] as number) += blur;
@@ -789,9 +800,11 @@ class Mapgen {
         const array: number[][] = this.createArray(height, width, 0);
 
         this.spiral((x: number, y: number) => {
-            const value: number = this.randint_range(
+            const value: number = this.randint_rangeXY(
                 -Math.floor(this.heightRange),
-                Math.floor(this.heightRange) + 1
+                Math.floor(this.heightRange) + 1,
+                x + this.offsetX,
+                y + this.offsetY
             );
             this.fillSquare(y, x, array, height, width, this.heightSquareWidth, value);
         }, -this.heightSquareWidth);
@@ -813,12 +826,12 @@ class Mapgen {
         const o: number[] = []; // Offset
 
         for (let i = 1; i <= waveCount; i++) {
-            f.push(i * (this.random() + 0.5));
-            a.push(this.random() * (c / i) * maxHeight + 0);
-            f.push(i * (this.random() + 0.5));
-            a.push(this.random() * (c / i) * maxHeight + 0);
-            o.push(this.random() * Math.PI * 2);
-            o.push(this.random() * Math.PI * 2);
+            f.push(i * (this.randomXY(1, 1) + 0.5));
+            a.push(this.randomXY(2, 2) * (c / i) * maxHeight + 0);
+            f.push(i * (this.randomXY(3, 3) + 0.5));
+            a.push(this.randomXY(4, 4) * (c / i) * maxHeight + 0);
+            o.push(this.randomXY(5, 5) * Math.PI * 2);
+            o.push(this.randomXY(6, 6) * Math.PI * 2);
         }
 
         for (let i = 0; i < this.size + 1; i++) {
@@ -908,8 +921,8 @@ class Mapgen {
         return spaces;
     }
 
-    private randomize(probability: number, original: number): number {
-        if (this.random() < probability) {
+    private randomize(probability: number, original: number, tile: Tile): number {
+        if (this.randomXY(tile.x, tile.y) < probability) {
             return 0;
         }
         return original;
@@ -994,6 +1007,11 @@ class Mapgen {
 
     // Count how many crystals we can actually get from where we start to prevent impossible levels
     private countAccessibleCrystals(base: number[], vehicles: boolean) {
+        // Default if there is no base
+        if (!this.base.length) {
+            return 0;
+        }
+
         const spaces: number[][] = [base];
         const tmap = this.createArray(this.size, this.size, -1);
 
@@ -1085,21 +1103,21 @@ class Mapgen {
             crystalCount = this.countAccessibleCrystals(this.base, true);
         }
         // Basic info
-        let MMtext: string =
-            'info{\n' +
-            'rowcount:' +
-            this.size +
-            '\n' +
-            'colcount:' +
-            this.size +
-            '\n' +
-            'camerapos:Translation: X=' +
-            (this.base[1] * 300 + 300) +
-            ' Y=' +
-            (this.base[0] * 300 + 300) +
-            ' Z=' +
-            this.height_array[this.base[0]][this.base[1]] +
-            ' Rotation: P=44.999992 Y=180.000000 R=0.000000 Scale X=1.000 Y=1.000 Z=1.000\n' +
+        let MMtext: string = '';
+        MMtext += 'info{\n' + 'rowcount:' + this.size + '\n' + 'colcount:' + this.size + '\n';
+
+        // Point the camera at the tool store if it exists
+        if (this.base.length) {
+            MMtext +=
+                'camerapos:Translation: X=' +
+                (this.base[1] * 300 + 300) +
+                ' Y=' +
+                (this.base[0] * 300 + 300) +
+                ' Z=' +
+                this.height_array[this.base[0]][this.base[1]] +
+                ' Rotation: P=44.999992 Y=180.000000 R=0.000000 Scale X=1.000 Y=1.000 Z=1.000\n';
+        }
+        MMtext +=
             'biome:' +
             this.biome +
             '\n' +
@@ -1194,38 +1212,40 @@ class Mapgen {
 
         // Buildings
         MMtext += 'buildings{\n';
-        MMtext +=
-            'BuildingToolStore_C\n' +
-            'Translation: X=' +
-            (this.base[1] * 300 + 150.0) +
-            ' Y=' +
-            (this.base[0] * 300 + 150.0) +
-            ' Z=' +
-            this.height_array[this.base[0]][this.base[1]] +
-            ' Rotation: P=' +
-            '0' +
-            '.000000 Y=89.999992 R=0.000000 Scale X=1.000 Y=1.000 Z=1.000\n' +
-            'Level=1\n' +
-            'Teleport=True\n' +
-            'Health=MAX\n' +
-            // X = chunk number
-            // Y = row within chunk
-            // Z = col within chunk
-            'Powerpaths=X=' +
-            (Math.floor(this.size / 8) * Math.floor(this.base[0] / 8) +
-                Math.floor(this.base[1] / 8)) +
-            ' Y=' +
-            (this.base[0] % 8) +
-            ' Z=' +
-            (this.base[1] % 8) +
-            '/X=' +
-            (Math.floor(this.size / 8) * Math.floor((this.base[0] + 1) / 8) +
-                Math.floor(this.base[1] / 8)) +
-            ' Y=' +
-            ((this.base[0] + 1) % 8) +
-            ' Z=' +
-            (this.base[1] % 8) +
-            '/\n';
+        if (this.base.length) {
+            MMtext +=
+                'BuildingToolStore_C\n' +
+                'Translation: X=' +
+                (this.base[1] * 300 + 150.0) +
+                ' Y=' +
+                (this.base[0] * 300 + 150.0) +
+                ' Z=' +
+                this.height_array[this.base[0]][this.base[1]] +
+                ' Rotation: P=' +
+                '0' +
+                '.000000 Y=89.999992 R=0.000000 Scale X=1.000 Y=1.000 Z=1.000\n' +
+                'Level=1\n' +
+                'Teleport=True\n' +
+                'Health=MAX\n' +
+                // X = chunk number
+                // Y = row within chunk
+                // Z = col within chunk
+                'Powerpaths=X=' +
+                (Math.floor(this.size / 8) * Math.floor(this.base[0] / 8) +
+                    Math.floor(this.base[1] / 8)) +
+                ' Y=' +
+                (this.base[0] % 8) +
+                ' Z=' +
+                (this.base[1] % 8) +
+                '/X=' +
+                (Math.floor(this.size / 8) * Math.floor((this.base[0] + 1) / 8) +
+                    Math.floor(this.base[1] / 8)) +
+                ' Y=' +
+                ((this.base[0] + 1) % 8) +
+                ' Z=' +
+                (this.base[1] % 8) +
+                '/\n';
+        }
         MMtext += '}\n';
 
         // A landslide has occured

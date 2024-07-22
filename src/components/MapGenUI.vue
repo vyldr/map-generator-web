@@ -28,12 +28,18 @@ function render(): void {
     size.value = mapgen.size;
     solidDensity.value = mapgen.solidDensity;
     mapgen.mapgen();
-    mapdisplay.render(mapgen.tiles, mapgen.height_array, parseInt(viewMode));
+    mapdisplay.render(
+        mapgen.tiles,
+        mapgen.height_array,
+        parseInt(viewMode),
+        mapgen.offsetX,
+        mapgen.offsetY
+    );
 }
 
 function shuffle(e: Event): void {
     e.preventDefault();
-    mapgen.seed = String(Math.floor(Math.random() * 1000000000000000));
+    mapgen.seed = Math.floor(Math.random() * 2 ** 32);
 
     mapgen.shuffle_parameters();
     render();
@@ -130,6 +136,16 @@ function download() {
             <div class="animation-item">
                 <span class="input-label">Seed</span>
                 <input type="number" @input="render" v-model.number="mapgen.seed" />
+            </div>
+
+            <div class="animation-item">
+                <span class="input-label">Move X</span>
+                <input type="number" @input="render" v-model.number="mapgen.inputOffsetX" />
+            </div>
+
+            <div class="animation-item">
+                <span class="input-label">Move Y</span>
+                <input type="number" @input="render" v-model.number="mapgen.inputOffsetY" />
             </div>
 
             <div class="animation-item">
