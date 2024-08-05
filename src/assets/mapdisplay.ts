@@ -28,6 +28,7 @@ class MapDisplay {
         14: 'rgb(255,   0,   0)', // Monster
         15: 'rgb(255, 128,   0)', // Wire
         16: 'rgb(255, 255,   0)', // Trigger
+        17: 'rgba(59,   0, 108, 0.7)', // Filled tile overlay
     };
 
     // Display the map to the canvas
@@ -71,6 +72,17 @@ class MapDisplay {
                         scale - separator,
                         scale - separator
                     );
+
+                    if (tiles[i][j].filled) {
+                        // Draw the tile fill overlay if the tile is filled
+                        this.ctx.fillStyle = this.colors[17]; // Filled tile overlay
+                        this.ctx.fillRect(
+                            j * scale + offset + Math.floor(separator / 2),
+                            i * scale + offset + Math.floor(separator / 2),
+                            scale - separator,
+                            scale - separator
+                        );
+                    }
                 }
             }
 

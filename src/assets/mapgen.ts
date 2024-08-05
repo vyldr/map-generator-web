@@ -90,7 +90,7 @@ class Mapgen {
 
         // Height
         this.heightAlgo = 0;
-        this.heightRange = this.randint_range(1, 20);
+        this.heightRange = this.randint_range(1, 10);
         this.heightSquareWidth = 8;
 
         // Oxygen
@@ -214,7 +214,7 @@ class Mapgen {
 
         // Optionally set oxygen
         if (this.oxygen == -1) {
-            this.oxygen = this.size * this.size * 3;
+            this.oxygen = this.size * this.size * 4;
         }
 
         // Create the dirt, loose rock, and solid rock
@@ -472,12 +472,14 @@ class Mapgen {
         this.spiral((x: number, y: number) => {
             // Choose a random value as the location preference
             const preference: number = this.randomXY(this.tiles[y][x].x, this.tiles[y][x].y);
-            // Check for a 2x2 ground section to build on
             if (
+                // Check for a 2x2 ground section to build on
                 this.tiles[y][x].type == 0 &&
                 this.tiles[y + 1][x].type == 0 &&
                 this.tiles[y][x + 1].type == 0 &&
-                this.tiles[y + 1][x + 1].type == 0
+                this.tiles[y + 1][x + 1].type == 0 &&
+                // Make sure the location is not filled
+                this.tiles[y][x].filled == false
             ) {
                 possibleBaseList.push([y, x, preference]);
             }
@@ -729,7 +731,7 @@ class Mapgen {
         spaces.pop(); // Remove the largest
         spaces.forEach((space) => {
             space.forEach((tile) => {
-                this.tiles[tile[0]][tile[1]].solid = obstacle;
+                this.tiles[tile[0]][tile[1]].filled = true;
             });
         });
 
@@ -1074,7 +1076,7 @@ class Mapgen {
         // Mark the open spaces
         const openTiles = [0, 6, 7, 8, 9, 13];
         this.spiral((x: number, y: number) => {
-            if (openTiles.includes(this.tiles[y][x].type)) {
+            if (openTiles.includes(this.tiles[y][x].type) && this.tiles[y][x].filled == false) {
                 tmap[y][x] = 0;
             }
         }, 1);
@@ -1151,6 +1153,9 @@ class Mapgen {
         const converted_walls = this.createArray(this.size, this.size, null);
         this.spiral((x: number, y: number) => {
             converted_walls[y][x] = conversion[this.tiles[y][x].type];
+            if (this.tiles[y][x].filled) {
+                converted_walls[y][x] = conversion[4]; // Solid rock
+            }
         }, 0);
 
         // List undiscovered caverns

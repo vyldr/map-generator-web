@@ -30,6 +30,8 @@ class Tile {
     public ore: number;
     public recharge: number;
 
+    public filled: boolean = false;
+
     public landslide: number;
     public erosion: number;
     public slug: number;
