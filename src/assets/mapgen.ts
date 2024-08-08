@@ -759,13 +759,15 @@ class Mapgen {
         for (let i = 0; i < height; i++) {
             for (let j = 0; j < width; j++) {
                 if (
-                    this.tiles[i][j].type == 0 &&
                     heightArray[i][j] == floodHeight &&
                     heightArray[i + 1][j] == floodHeight &&
                     heightArray[i][j + 1] == floodHeight &&
                     heightArray[i + 1][j + 1] == floodHeight
                 ) {
-                    this.tiles[i][j].type = floodType;
+                    this.tiles[i][j].flooded = true;
+                    if (this.tiles[i][j].type == 0) {
+                        this.tiles[i][j].type = floodType;
+                    }
                 }
             }
         }
@@ -1026,7 +1028,7 @@ class Mapgen {
 
         // Mark which spaces could be accessible
         this.spiral((x: number, y: number) => {
-            if (types.includes(this.tiles[y][x].type)) {
+            if (types.includes(this.tiles[y][x].type) && !this.tiles[y][x].flooded) {
                 tmap[y][x] = 0; //Accessible
             }
         }, 1);
@@ -1361,7 +1363,36 @@ class Mapgen {
         MMtext += '}\n';
 
         // Script
-        MMtext += 'script{\n\n}';
+        MMtext += 'script{\n\n';
+
+        const wallTypes = new Set([
+            1, // Dirt
+            2, // Loose Rock
+            3, // Hard Rock
+            10, // Energy Crystal Seam
+            11, // Ore Seam
+        ]);
+
+        // Water or lava under walls
+        this.spiral((x: number, y: number) => {
+            // If the tile is a wall at the flood level
+            if (this.tiles[y][x].flooded && wallTypes.has(this.tiles[y][x].type)) {
+                MMtext +=
+                    'if(drill:' +
+                    y +
+                    ',' +
+                    x +
+                    ')[place:' +
+                    y +
+                    ',' +
+                    x +
+                    ',' +
+                    conversion[this.floodType] +
+                    ']\n';
+            }
+        });
+
+        MMtext += '}\n';
 
         return MMtext;
     }

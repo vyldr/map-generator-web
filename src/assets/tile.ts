@@ -2,44 +2,29 @@ class Tile {
     constructor(y: number, x: number) {
         this.x = x;
         this.y = y;
-        this.type = -1;
-
-        this.wall = -1;
-        this.solid = -1;
-        this.crystals = -1;
-        this.ore = -1;
-        this.recharge = -1;
-
-        this.landslide = 0;
-        this.erosion = -1;
-        this.slug = 0;
-        this.monster = 0;
-
-        this.monsterTriggers = [];
-        this.triggerId = 0;
-        this.emergeId = 0;
     }
 
     public x: number;
     public y: number;
-    public type: number;
+    public type: number = -1;
 
-    public wall: number;
-    public solid: number;
-    public crystals: number;
-    public ore: number;
-    public recharge: number;
+    public wall: number = -1;
+    public solid: number = -1;
+    public crystals: number = -1;
+    public ore: number = -1;
+    public recharge: number = -1;
 
     public filled: boolean = false;
+    public flooded: boolean = false;
 
-    public landslide: number;
-    public erosion: number;
-    public slug: number;
-    public monster: number;
+    public landslide: number = 0;
+    public erosion: number = -1;
+    public slug: number = 0;
+    public monster: number = 0;
 
-    private monsterTriggers: Tile[];
-    public triggerId: number;
-    public emergeId: number;
+    private monsterTriggers: Tile[] = [];
+    public triggerId: number = 0;
+    public emergeId: number = 0;
 
     public addTrigger(tile: Tile): void {
         this.monsterTriggers.push(tile);
